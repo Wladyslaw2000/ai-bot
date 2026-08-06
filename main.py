@@ -17,7 +17,6 @@ FAL_KEY = os.environ.get("FAL_KEY")
 groq_agent = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 eleven_agent = ElevenLabs(api_key=ELEVENLABS_API_KEY) if ELEVENLABS_API_KEY else None
 
-# Меню /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🎬 Написать Сценарий", callback_data='mode_script')],
@@ -55,7 +54,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(status, parse_mode='Markdown')
 
-# Текст (Groq) — ИСПРАВЛЕНА МОДЕЛЬ НА llama-3.1-8b-instant
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not groq_agent:
         await update.message.reply_text("⚠️ Ошибка: Добавь GROQ_API_KEY в Render Environment Variables.")
@@ -70,7 +68,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await msg.edit_text(f"⚠️ Ошибка Groq: {str(e)}")
 
-# Картинки (Fal.ai)
 async def handle_image_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = " ".join(context.args)
     if not prompt:
@@ -84,7 +81,6 @@ async def handle_image_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         await msg.edit_text(f"⚠️ Ошибка картинки: {str(e)}")
 
-# Голос (ElevenLabs)
 async def handle_voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_to_speak = " ".join(context.args)
     if not text_to_speak:
@@ -98,7 +94,6 @@ async def handle_voice_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         await msg.edit_text(f"⚠️ Ошибка голоса: {str(e)}")
 
-# Видео (Fal.ai) — ИСПРАВЛЕН ЭНДПОИНТ НА ИЗВЕСТНЫЙ РАБОЧИЙ
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or "Enhance video quality and effects"
     msg = await update.message.reply_text("📹 **Видео принято!** Отправляю в облако Fal.ai, подожди 1-2 минуты...")
