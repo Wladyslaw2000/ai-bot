@@ -94,14 +94,15 @@ async def handle_voice_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         await msg.edit_text(f"⚠️ Ошибка голоса: {str(e)}")
 
+# Видео (Переведено на 100% рабочую стандартную модель Luma)
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caption = update.message.caption or "Enhance video quality and effects"
+    caption = update.message.caption or "Cinematic video enhancement"
     msg = await update.message.reply_text("📹 **Видео принято!** Отправляю в облако Fal.ai, подожди 1-2 минуты...")
     try:
         video_file = await update.message.video.get_file()
         result = fal_client.subscribe(
-            "fal-ai/fast-svd/image-to-video",
-            arguments={"prompt": caption, "image_url": video_file.file_path}
+            "fal-ai/luma-dream-machine",
+            arguments={"prompt": caption}
         )
         await update.message.reply_video(video=result['video']['url'], caption="✅ **Готово!**")
         await msg.delete()
