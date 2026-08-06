@@ -6,7 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 from groq import Groq
 import fal_client
 from elevenlabs.client import ElevenLabs
-from moviepy import VideoFileClip
+import cv2
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -35,7 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🖼 Создать Фото (Flux)", callback_data='help_image')],
         [InlineKeyboardButton("📹 Режим Видео (HQ Animation)", callback_data='help_v2v'), InlineKeyboardButton("📷 Оживить ФОТО (I2V)", callback_data='help_i2v')],
         [InlineKeyboardButton("🎙 Озвучка (ElevenLabs)", callback_data='help_voice'), InlineKeyboardButton("🪄 Промпт-Улучшайзер", callback_data='help_enhance')],
-        [InlineKeyboardButton("🎵 Извлечь Звук", callback_data='help_audio'), InlineKeyboardButton("⚙️ Настройки Силы ИИ", callback_data='help_strength')],
+        [InlineKeyboardButton("⚙️ Настройки Силы ИИ", callback_data='help_strength')],
         [InlineKeyboardButton("⚡️ Статус Подключений", callback_data='mode_status')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -66,8 +66,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "🎙 **Озвучка Текста (ElevenLabs)**\n\nПример:\n`/voice Привет! Видеоролик полностью готов.`"
     elif query.data == 'help_enhance':
         text = "🪄 **Промпт-Улучшайзер**\n\nПример:\n`/enhance девушка с букетом цветов на закате` — ИИ создаст готовый английский промпт."
-    elif query.data == 'help_audio':
-        text = "🎵 **Извлечение Аудио**\n\nПрикрепи видео и напиши подпись:\n`/extract_audio`"
     elif query.data == 'help_strength':
         text = "⚙️ **Настройка Силы Изменений (V2V Strength)**\n\nОтправь команду:\n`/strength 0.4` — точное повторение оригинальных кадров\n`/strength 0.7` — плавная генерация новых красивых движений"
     elif query.data == 'mode_status':
@@ -164,25 +162,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_video_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_caption = update.message.caption or "Girl walking smoothly, cinematic lighting, photorealistic"
     
-    if user_caption.strip().lower() == "/extract_audio":
-        msg = await update.message.reply_text("🎵 Извлекаю звук...")
-        local_video = "temp_vid.mp4"
-        local_audio = "extracted.mp3"
-        try:
-            video_obj = await update.message.video.get_file()
-            await video_obj.download_to_drive(local_video)
-            clip = VideoFileClip(local_video)
-            clip.audio.write_audiofile(local_audio, logger=None)
-            clip.close()
-            await update.message.reply_audio(audio=open(local_audio, 'rb'), caption="✅ Аудио готово!")
-            await msg.delete()
-        except Exception as e:
-            await msg.edit_text(f"⚠️ Ошибка извлечения: {str(e)}")
-        finally:
-            if os.path.exists(local_video): os.remove(local_video)
-            if os.path.exists(local_audio): os.remove(local_audio)
-        return
-
     msg = await update.message.reply_text("📹 **Видео получено!** Подготавливаю кадры...")
     local_video = "input_video.mp4"
     extracted_frame = "first_frame.jpg"
@@ -191,17 +170,21 @@ async def handle_video_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         video_obj = await update.message.video.get_file()
         await video_obj.download_to_drive(local_video)
 
-        # Извлекаем первый кадр из видео
-        clip = VideoFileClip(local_video)
-        clip.save_frame(extracted_frame, t=0.5)
-        clip.close()
+        # Стабильное извлечение первого кадра через OpenCV (cv2)
+        cap = cv2.VideoCapture(local_video)
+        success, frame = cap.read()
+        cap.release()
+
+        if success:
+            cv2.imwrite(extracted_frame, frame)
+        else:
+            raise Exception("Не удалось прочитать видеокадр.")
 
         await msg.edit_text("⚡️ **Генерирую кинематографичное видео (Wan 2.1)...**")
         image_url = fal_client.upload_file(extracted_frame)
         
         full_prompt = f"{user_caption}, {MASTER_VIDEO_PROMPT}"
 
-        # Генерация на проверенном эндпоинте Wan 2.1
         result = fal_client.subscribe(
             "fal-ai/wan-i2v",
             arguments={
