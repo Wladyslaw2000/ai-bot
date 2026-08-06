@@ -1,43 +1,125 @@
 import os
+import asyncio
 import logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from groq import Groq
+import fal_client
+from elevenlabs.client import ElevenLabs
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
+# Ключи из Environment Variables
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
+FAL_KEY = os.environ.get("FAL_KEY")
 
-groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+groq_agent = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+eleven_agent = ElevenLabs(api_key=ELEVENLABS_API_KEY) if ELEVENLABS_API_KEY else None
 
+# Меню /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 ИИ-Комбайн запущен и готов к работе! Напиши мне что-нибудь.")
+    keyboard = [
+        [InlineKeyboardButton("🎬 Написать Сценарий", callback_data='mode_script')],
+        [InlineKeyboardButton("🎨 Инструкции по Картинкам", callback_data='mode_image_info')],
+        [InlineKeyboardButton("🎙 Инструкции по Озвучке", callback_data='mode_voice_info')],
+        [InlineKeyboardButton("⚡️ Проверить Ключи", callback_data='mode_status')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "🚀 **ИИ-Комбайн полностью запущен!**\n\n"
+        "• **Текст:** просто пиши сообщение в чат.\n"
+        "• **Картинка:** `/image [описание]`\n"
+        "• **Озвучка:** `/voice [текст]`\n"
+        "• **Обработка видео:** просто пришли видео с подписью-ТЗ.",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
 
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == 'mode_script':
+        await query.edit_message_text("Напиши тему или идею, и я создам сценарий!")
+    elif query.data == 'mode_image_info':
+        await query.edit_message_text("Создание картинки:\n`/image киберпанк город, неоновый свет`", parse_mode='Markdown')
+    elif query.data == 'mode_voice_info':
+        await query.edit_message_text("Озвучка текста:\n`/voice Привет, я твой ИИ ассистент`", parse_mode='Markdown')
+    elif query.data == 'mode_status':
+        status = (
+            f"📊 **Статус подключения:**\n"
+            f"• Telegram: ✅ Активен\n"
+            f"• Groq (Текст): {'✅ OK' if GROQ_API_KEY else '❌ Нет ключа GROQ_API_KEY'}\n"
+            f"• Fal.ai (Визуал/Видео): {'✅ OK' if FAL_KEY else '❌ Нет ключа FAL_KEY'}\n"
+            f"• ElevenLabs (Голос): {'✅ OK' if ELEVENLABS_API_KEY else '❌ Нет ключа ELEVENLABS_API_KEY'}\n"
+        )
+        await query.edit_message_text(status, parse_mode='Markdown')
+
+# Текст (Groq)
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not groq_client:
-        await update.message.reply_text("⚠️ Ключ GROQ_API_KEY не найден в Environment Variables.")
+    if not groq_agent:
+        await update.message.reply_text("⚠️ Ошибка: Добавь GROQ_API_KEY в Render Environment Variables.")
         return
-        
-    user_text = update.message.text
     msg = await update.message.reply_text("🎬 Генерирую ответ...")
-    
     try:
-        completion = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": user_text}],
+        completion = groq_agent.chat.completions.create(
+            messages=[{"role": "user", "content": update.message.text}],
             model="llama3-8b-8192",
         )
-        response = completion.choices[0].message.content
-        await msg.edit_text(response)
+        await msg.edit_text(completion.choices[0].message.content)
     except Exception as e:
-        await msg.edit_text(f"⚠️ Ошибка: {str(e)}")
+        await msg.edit_text(f"⚠️ Ошибка Groq: {str(e)}")
 
+# Картинки (Fal.ai)
+async def handle_image_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    prompt = " ".join(context.args)
+    if not prompt:
+        await update.message.reply_text("Пиши так: `/image космический корабль`", parse_mode='Markdown')
+        return
+    msg = await update.message.reply_text("🎨 Генерирую изображение...")
+    try:
+        result = fal_client.subscribe("fal-ai/flux/schnell", arguments={"prompt": prompt})
+        await update.message.reply_photo(photo=result['images'][0]['url'], caption=f"🖼 {prompt}")
+        await msg.delete()
+    except Exception as e:
+        await msg.edit_text(f"⚠️ Ошибка картинки: {str(e)}")
+
+# Голос (ElevenLabs)
+async def handle_voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text_to_speak = " ".join(context.args)
+    if not text_to_speak:
+        await update.message.reply_text("Пиши так: `/voice Привет`", parse_mode='Markdown')
+        return
+    msg = await update.message.reply_text("🎙 Озвучиваю...")
+    try:
+        audio = eleven_agent.generate(text=text_to_speak, voice="Rachel", model="eleven_multilingual_v2")
+        await update.message.reply_voice(voice=audio)
+        await msg.delete()
+    except Exception as e:
+        await msg.edit_text(f"⚠️ Ошибка голоса: {str(e)}")
+
+# Видео (Fal.ai)
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📹 Видео успешно получено и отправлено в обработку!")
+    caption = update.message.caption or "Обработай видео и улучши кадры"
+    msg = await update.message.reply_text("📹 **Видео принято!** Отправляю в облако Fal.ai, подожди 1-2 минуты...")
+    try:
+        video_file = await update.message.video.get_file()
+        result = fal_client.subscribe(
+            "fal-ai/wan-video",
+            arguments={"prompt": caption, "video_url": video_file.file_path}
+        )
+        await update.message.reply_video(video=result['video']['url'], caption="✅ **Готово!**")
+        await msg.delete()
+    except Exception as e:
+        await msg.edit_text(f"⚠️ Ошибка обработки видео: {str(e)}\nУбедись, что FAL_KEY добавлен в Render.")
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("image", handle_image_command))
+    app.add_handler(CommandHandler("voice", handle_voice_command))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
     app.run_polling()
