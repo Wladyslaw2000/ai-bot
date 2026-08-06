@@ -17,6 +17,7 @@ FAL_KEY = os.environ.get("FAL_KEY")
 groq_agent = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 eleven_agent = ElevenLabs(api_key=ELEVENLABS_API_KEY) if ELEVENLABS_API_KEY else None
 
+# Меню /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🎬 Написать Сценарий", callback_data='mode_script')],
@@ -54,7 +55,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(status, parse_mode='Markdown')
 
-# Текст (Groq) — исправлена модель на актуальную
+# Текст (Groq) — ИСПРАВЛЕНА МОДЕЛЬ НА llama-3.1-8b-instant
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not groq_agent:
         await update.message.reply_text("⚠️ Ошибка: Добавь GROQ_API_KEY в Render Environment Variables.")
@@ -97,20 +98,20 @@ async def handle_voice_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         await msg.edit_text(f"⚠️ Ошибка голоса: {str(e)}")
 
-# Видео (Fal.ai) — исправлено название рабочей видео-модели
+# Видео (Fal.ai) — ИСПРАВЛЕН ЭНДПОИНТ НА ИЗВЕСТНЫЙ РАБОЧИЙ
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caption = update.message.caption or "Обработай видео и улучши кадры"
+    caption = update.message.caption or "Enhance video quality and effects"
     msg = await update.message.reply_text("📹 **Видео принято!** Отправляю в облако Fal.ai, подожди 1-2 минуты...")
     try:
         video_file = await update.message.video.get_file()
         result = fal_client.subscribe(
-            "fal-ai/kling-video/v1.5/pro/image-to-video",
+            "fal-ai/fast-svd/image-to-video",
             arguments={"prompt": caption, "image_url": video_file.file_path}
         )
         await update.message.reply_video(video=result['video']['url'], caption="✅ **Готово!**")
         await msg.delete()
     except Exception as e:
-        await msg.edit_text(f"⚠️ Ошибка обработки видео: {str(e)}\nУбедись, что FAL_KEY добавлен в Render.")
+        await msg.edit_text(f"⚠️ Ошибка обработки видео: {str(e)}")
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
